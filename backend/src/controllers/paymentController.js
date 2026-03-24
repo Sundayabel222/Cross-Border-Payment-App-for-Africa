@@ -25,6 +25,11 @@ async function send(req, res, next) {
 
     const { public_key, encrypted_secret_key } = walletResult.rows[0];
 
+    // Prevent self-payment
+    if (recipient_address === public_key) {
+      return res.status(400).json({ error: 'Cannot send payment to your own wallet' });
+    }
+
     // Fraud protection
     const isSuspicious = await fraudCheck(public_key);
     if (isSuspicious) {
