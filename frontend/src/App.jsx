@@ -13,6 +13,7 @@ import TransactionHistory from "./pages/TransactionHistory";
 import Profile from "./pages/Profile";
 import KYCVerification from "./pages/KYCVerification";
 import Layout from "./components/Layout";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -33,56 +34,58 @@ function PublicRoute({ children }) {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Toaster
-          position="top-center"
-          toastOptions={{
-            style: { background: "#1e293b", color: "#fff", border: "1px solid #334155" },
-          }}
-        />
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <PublicRoute>
-                <Welcome />
-              </PublicRoute>
-            }
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              style: { background: "#1e293b", color: "#fff", border: "1px solid #334155" },
+            }}
           />
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <PublicRoute>
-                <Register />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <Layout />
-              </PrivateRoute>
-            }
-          >
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="send" element={<SendMoney />} />
-            <Route path="receive" element={<ReceiveMoney />} />
-            <Route path="history" element={<TransactionHistory />} />
-            <Route path="profile" element={<Profile />} />
-            <Route path="kyc" element={<KYCVerification />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <PublicRoute>
+                  <Welcome />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicRoute>
+                  <Register />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/"
+              element={
+                <PrivateRoute>
+                  <Layout />
+                </PrivateRoute>
+              }
+            >
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="send" element={<SendMoney />} />
+              <Route path="receive" element={<ReceiveMoney />} />
+              <Route path="history" element={<TransactionHistory />} />
+              <Route path="profile" element={<Profile />} />
+              <Route path="kyc" element={<KYCVerification />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
