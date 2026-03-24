@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
 const authMiddleware = require('../middleware/auth');
 const idempotency = require('../middleware/idempotency');
-const { send, history } = require('../controllers/paymentController');
+const { send, history, exportCSV } = require('../controllers/paymentController');
 
 const validate = (req, res, next) => {
   const errors = validationResult(req);
@@ -24,5 +24,6 @@ router.post('/send',
 );
 
 router.get('/history', history);
+router.get('/export', exportCSV);
 
 module.exports = router;

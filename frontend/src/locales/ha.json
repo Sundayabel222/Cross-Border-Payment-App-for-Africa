@@ -90,7 +90,8 @@
     "filter_sent": "aika",
     "filter_received": "karɓa",
     "to": "Zuwa:",
-    "from": "Daga:"
+    "from": "Daga:",
+    "export_csv": "Fitar CSV"
   },
   "profile": {
     "title": "Bayanan Kai",

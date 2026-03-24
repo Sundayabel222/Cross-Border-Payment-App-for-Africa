@@ -90,7 +90,8 @@
     "filter_sent": "sent",
     "filter_received": "received",
     "to": "To:",
-    "from": "From:"
+    "from": "From:",
+    "export_csv": "Export CSV"
   },
   "profile": {
     "title": "Profile",

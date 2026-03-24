@@ -90,7 +90,8 @@
     "filter_sent": "zilizotumwa",
     "filter_received": "zilizopokelewa",
     "to": "Kwa:",
-    "from": "Kutoka:"
+    "from": "Kutoka:",
+    "export_csv": "Hamisha CSV"
   },
   "profile": {
     "title": "Wasifu",
