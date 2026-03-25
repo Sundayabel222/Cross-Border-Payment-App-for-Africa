@@ -7,9 +7,12 @@ CREATE TABLE users (
   full_name     VARCHAR(100) NOT NULL,
   email         VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  phone         VARCHAR(20),
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
+  phone              VARCHAR(20),
+  email_verified     BOOLEAN     NOT NULL DEFAULT FALSE,
+  verification_token VARCHAR(64),
+  token_expires_at   TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE wallets (
@@ -46,3 +49,18 @@ CREATE INDEX idx_transactions_sender ON transactions(sender_wallet);
 CREATE INDEX idx_transactions_recipient ON transactions(recipient_wallet);
 CREATE INDEX idx_wallets_user ON wallets(user_id);
 CREATE INDEX idx_contacts_user ON contacts(user_id);
+
+-- Keep users.updated_at in sync on every UPDATE (INSERT still uses column DEFAULT)
+CREATE OR REPLACE FUNCTION set_users_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS users_updated_at ON users;
+CREATE TRIGGER users_updated_at
+  BEFORE UPDATE ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION set_users_updated_at();

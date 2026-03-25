@@ -16,15 +16,38 @@ export default function TransactionHistory() {
   const { t } = useTranslation();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState('all');
-  const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
-    api.get('/payments/history')
-      .then(r => setTransactions(r.data.transactions))
+    setLoading(true);
+    setTransactions([]);
+    setPage(1);
+    api.get('/payments/history?page=1&limit=20')
+      .then(r => {
+        setTransactions(r.data.transactions);
+        setHasMore(r.data.page < r.data.pages);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchTransactions(); }, []);
+
+  const loadMore = () => {
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    api.get(`/payments/history?page=${nextPage}&limit=20`)
+      .then(r => {
+        setTransactions(prev => [...prev, ...r.data.transactions]);
+        setPage(nextPage);
+        setHasMore(nextPage < r.data.pages);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  };
 
   const filtered = transactions.filter(tx => {
     if (filter === 'sent') return tx.direction === 'sent';
@@ -93,12 +116,23 @@ export default function TransactionHistory() {
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <div className="text-center py-12 text-gray-500">
+          <p className="text-red-400 mb-3">{error}</p>
+          <button
+            onClick={fetchTransactions}
+            className="px-4 py-2 bg-primary-500 text-white rounded-lg text-sm hover:bg-primary-600 transition-colors"
+          >
+            Try again
+          </button>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
           <p className="text-4xl mb-3">📭</p>
           <p>{t('common.no_transactions')}</p>
         </div>
       ) : (
+        <>
         <div className="space-y-3">
           {filtered.map(tx => (
             <div key={tx.id} className="bg-gray-900 rounded-xl p-4">
@@ -146,6 +180,16 @@ export default function TransactionHistory() {
             </div>
           ))}
         </div>
+        {hasMore && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full mt-4 py-2.5 rounded-xl bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            {loadingMore ? 'Loading...' : 'Load more'}
+          </button>
+        )}
+        </>
       )}
     </div>
   );
