@@ -21,6 +21,7 @@ export default function SendMoney() {
     memo: '',
     destination_asset: '',
     slippage: DEFAULT_SLIPPAGE,
+    memo_type: 'text'
   });
   const [contacts, setContacts] = useState([]);
   const [showContacts, setShowContacts] = useState(false);
@@ -72,6 +73,9 @@ export default function SendMoney() {
   const destMin = pathResult
     ? (parseFloat(pathResult.destinationAmount) * (1 - form.slippage / 100)).toFixed(7)
     : null;
+  const memoTrimmed = form.memo.trim();
+  const memoMaxLen =
+    form.memo_type === 'id' ? 20 : form.memo_type === 'text' ? 28 : 64;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -100,6 +104,17 @@ export default function SendMoney() {
           memo: form.memo || undefined,
         });
       }
+      const m = form.memo.trim();
+      const payload = {
+        recipient_address: form.recipient_address,
+        amount: parseFloat(form.amount),
+        asset: form.asset
+      };
+      if (m) {
+        payload.memo = m;
+        payload.memo_type = form.memo_type;
+      }
+      await api.post('/payments/send', payload);
       toast.success(t('send.success'));
       navigate('/dashboard');
     } catch (err) {
@@ -264,12 +279,31 @@ export default function SendMoney() {
           <label className="text-sm text-gray-400 mb-1 block">{t('send.memo')}</label>
           <input
             type="text"
-            maxLength={28}
+            maxLength={memoMaxLen}
             placeholder={t('send.memo_placeholder')}
             value={form.memo}
             onChange={e => setForm({ ...form, memo: e.target.value })}
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors font-mono text-sm"
           />
+          {memoTrimmed ? (
+            <div className="mt-2">
+              <label className="text-sm text-gray-400 mb-1 block" htmlFor="memo-type">
+                {t('send.memo_type_label')}
+              </label>
+              <select
+                id="memo-type"
+                value={form.memo_type}
+                onChange={e => setForm({ ...form, memo_type: e.target.value })}
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary-500 transition-colors"
+              >
+                <option value="text">{t('send.memo_type_text')}</option>
+                <option value="id">{t('send.memo_type_id')}</option>
+                <option value="hash">{t('send.memo_type_hash')}</option>
+                <option value="return">{t('send.memo_type_return')}</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">{t(`send.memo_hint_${form.memo_type}`)}</p>
+            </div>
+          ) : null}
         </div>
 
         {/* Confirmation preview */}
@@ -283,6 +317,14 @@ export default function SendMoney() {
                 <p>Recipient receives ≈ <span className="text-white font-semibold">{pathResult.destinationAmount} {form.destination_asset}</span> (min {destMin})</p>
               )}
               {form.memo && <p>{t('send.confirm_memo')} {form.memo}</p>}
+              {form.memo.trim() ? (
+                <>
+                  <p>{t('send.confirm_memo')} {form.memo.trim()}</p>
+                  <p className="text-gray-400 text-xs">
+                    {t('send.confirm_memo_type')} {t(`send.memo_type_${form.memo_type}`)}
+                  </p>
+                </>
+              ) : null}
             </div>
           </div>
         )}
