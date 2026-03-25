@@ -4,6 +4,7 @@ const { body, query, validationResult } = require('express-validator');
 const StellarSdk = require('@stellar/stellar-sdk');
 const authMiddleware = require('../middleware/auth');
 const idempotency = require('../middleware/idempotency');
+const { send, history, exportCSV } = require('../controllers/paymentController');
 const { send, history } = require('../controllers/paymentController');
 const paymentSendValidators = require('../validators/paymentSendValidators');
 
