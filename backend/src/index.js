@@ -71,6 +71,7 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 require('dotenv').config();
+
 const validateEnv = require('./utils/validateEnv');
 const logger = require('./utils/logger');
 
