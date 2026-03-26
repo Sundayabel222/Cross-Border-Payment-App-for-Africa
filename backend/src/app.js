@@ -14,6 +14,7 @@ const adminRoutes = require('./routes/admin');
 const webhookRoutes = require('./routes/webhooks');
 const notificationRoutes = require('./routes/notifications');
 const stellarTomlRoutes = require('./routes/stellarToml');
+const analyticsRoutes = require('./routes/analytics');
 
 const logger = require('./utils/logger');
 
@@ -55,6 +56,7 @@ app.use('/api/auth', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/webhooks', webhookRoutes);
