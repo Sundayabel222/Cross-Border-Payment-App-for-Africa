@@ -24,6 +24,7 @@ export default function SendMoney() {
   const [showPINVerification, setShowPINVerification] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [feeXLM, setFeeXLM] = useState(null);
 
   useEffect(() => {
     api.get('/wallet/contacts').then(r => setContacts(r.data.contacts || [])).catch(() => {});
@@ -39,7 +40,17 @@ export default function SendMoney() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!confirmed) { setConfirmed(true); return; }
+    if (!confirmed) {
+      // Fetch fresh fee estimate at confirmation time
+      try {
+        const r = await api.get('/payments/estimate-fee');
+        setFeeXLM(r.data.fee_xlm);
+      } catch {
+        setFeeXLM(null);
+      }
+      setConfirmed(true);
+      return;
+    }
     // Show PIN verification modal instead of directly submitting
     setShowPINVerification(true);
   };
@@ -193,6 +204,16 @@ export default function SendMoney() {
             <div className="text-sm text-gray-300 space-y-1">
               <p>{t('send.confirm_to')} <span className="font-mono text-xs">{form.recipient_address.slice(0, 20)}...</span></p>
               <p>{t('send.confirm_amount')} <span className="text-white font-semibold">{form.amount} {form.asset}</span></p>
+              {feeXLM && (
+                <>
+                  <p>{t('send.confirm_fee', 'Network fee:')} <span className="text-white">{feeXLM} XLM</span></p>
+                  {form.asset === 'XLM' && (
+                    <p className="text-yellow-300 font-semibold">
+                      {t('send.confirm_total', 'Total:')} {(parseFloat(form.amount) + parseFloat(feeXLM)).toFixed(7)} XLM
+                    </p>
+                  )}
+                </>
+              )}
               {form.memo.trim() ? (
                 <>
                   <p>{t('send.confirm_memo')} {form.memo.trim()}</p>
@@ -222,7 +243,7 @@ export default function SendMoney() {
         </button>
 
         {confirmed && (
-          <button type="button" onClick={() => setConfirmed(false)}
+          <button type="button" onClick={() => { setConfirmed(false); setFeeXLM(null); }}
             className="w-full text-gray-400 hover:text-white text-sm py-2 transition-colors">
             {t('common.cancel')}
           </button>

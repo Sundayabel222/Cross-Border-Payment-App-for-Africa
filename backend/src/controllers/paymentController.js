@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 const { stringify } = require("csv-stringify");
 const db = require("../db");
-const { sendPayment } = require("../services/stellar");
+const { sendPayment, fetchFee } = require("../services/stellar");
 const webhook = require("../services/webhook");
 const cache = require("../utils/cache");
 
@@ -25,6 +25,15 @@ async function fraudCheck(walletAddress) {
     [walletAddress],
   );
   return parseInt(result.rows[0].count) >= 5;
+}
+
+async function estimateFee(req, res, next) {
+  try {
+    const fee = await fetchFee();
+    res.json({ fee_stroops: fee, fee_xlm: (fee / 1e7).toFixed(7) });
+  } catch (err) {
+    next(err);
+  }
 }
 
 async function send(req, res, next) {
@@ -236,4 +245,4 @@ async function exportCSV(req, res, next) {
   }
 }
 
-module.exports = { send, history, exportCSV };
+module.exports = { send, history, exportCSV, estimateFee };

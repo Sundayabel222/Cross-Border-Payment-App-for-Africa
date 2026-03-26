@@ -215,4 +215,8 @@ async function getTransactions(publicKey, limit = 20) {
   }
 }
 
-module.exports = { createWallet, getBalance, sendPayment, getTransactions, decryptPrivateKey };
+async function fetchFee() {
+  return withRetry(() => server.fetchBaseFee(), { label: 'fetchBaseFee' });
+}
+
+module.exports = { createWallet, getBalance, sendPayment, getTransactions, decryptPrivateKey, encryptPrivateKey, fetchFee };
