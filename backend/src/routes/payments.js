@@ -4,6 +4,7 @@ const authMiddleware = require('../middleware/auth');
 const idempotency = require('../middleware/idempotency');
 const { send, history } = require('../controllers/paymentController');
 const paymentSendValidators = require('../validators/paymentSendValidators');
+const { ALLOWED_HISTORY_ASSETS } = require('../utils/historyQuery');
 
 const validate = (req, res, next) => {
   const errors = validationResult(req);
@@ -23,6 +24,21 @@ router.get(
       .optional()
       .isInt({ min: 1, max: 100 })
       .withMessage('limit must be between 1 and 100'),
+    query('from')
+      .optional({ values: 'falsy' })
+      .trim()
+      .isISO8601()
+      .withMessage('from must be a valid ISO 8601 date'),
+    query('to')
+      .optional({ values: 'falsy' })
+      .trim()
+      .isISO8601()
+      .withMessage('to must be a valid ISO 8601 date'),
+    query('asset')
+      .optional({ values: 'falsy' })
+      .trim()
+      .isIn(ALLOWED_HISTORY_ASSETS)
+      .withMessage(`asset must be one of: ${ALLOWED_HISTORY_ASSETS.join(', ')}`),
   ],
   validate,
   history
