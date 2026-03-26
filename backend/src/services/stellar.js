@@ -103,8 +103,61 @@ async function checkTrustline(recipientPublicKey, assetObj) {
   }
 }
 
+const MEMO_ID_MAX = 2n ** 64n - 1n;
+
+function memoValidationError(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
+/**
+ * Build a Stellar memo from user input. Default type is `text` (max 28 chars).
+ * @param {string} memo - trimmed memo payload
+ * @param {string} [memoType='text'] - text | id | hash | return
+ */
+function buildStellarMemo(memo, memoType = 'text') {
+  if (!memo) return null;
+  const type = (memoType || 'text').toLowerCase();
+
+  switch (type) {
+    case 'text':
+      return StellarSdk.Memo.text(memo.slice(0, 28));
+    case 'id': {
+      if (!/^\d+$/.test(memo)) throw memoValidationError('Memo ID must be a numeric string');
+      try {
+        const n = BigInt(memo);
+        if (n < 0n || n > MEMO_ID_MAX) throw memoValidationError('Memo ID is out of range');
+      } catch (e) {
+        if (e.status === 400) throw e;
+        throw memoValidationError('Memo ID is invalid');
+      }
+      return StellarSdk.Memo.id(memo);
+    }
+    case 'hash':
+    case 'return': {
+      const hex = memo.replace(/^0x/i, '');
+      if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+        throw memoValidationError('Memo hash must be exactly 64 hexadecimal characters');
+      }
+      const buf = Buffer.from(hex, 'hex');
+      return type === 'hash' ? StellarSdk.Memo.hash(buf) : StellarSdk.Memo.return(buf);
+    }
+    default:
+      throw memoValidationError(`Unsupported memo type: ${memoType}`);
+  }
+}
+
 // Send payment
-async function sendPayment({ senderPublicKey, encryptedSecretKey, recipientPublicKey, amount, asset = 'XLM', memo }) {
+async function sendPayment({
+  senderPublicKey,
+  encryptedSecretKey,
+  recipientPublicKey,
+  amount,
+  asset = 'XLM',
+  memo,
+  memoType = 'text'
+}) {
   const assetObj = resolveAsset(asset);
 
   // Trustline check is only required for non-native assets
@@ -127,7 +180,8 @@ async function sendPayment({ senderPublicKey, encryptedSecretKey, recipientPubli
     }))
     .setTimeout(30);
 
-  if (memo) txBuilder.addMemo(StellarSdk.Memo.text(memo.slice(0, 28)));
+  const memoObj = memo ? buildStellarMemo(memo, memoType) : null;
+  if (memoObj) txBuilder.addMemo(memoObj);
 
   const transaction = txBuilder.build();
   transaction.sign(senderKeypair);
@@ -160,4 +214,103 @@ async function getTransactions(publicKey, limit = 20) {
   }
 }
 
-module.exports = { createWallet, getBalance, sendPayment, getTransactions, decryptPrivateKey };
+/**
+ * Find the best path for a strict-send cross-asset payment.
+ * Returns the top path result from Horizon's path-finding API.
+ *
+ * @param {string} sourceAsset       - Asset the sender is spending (e.g. 'XLM')
+ * @param {string} sourceAmount      - Amount the sender will spend
+ * @param {string} destinationAsset  - Asset the recipient should receive
+ * @param {string} destinationPublicKey - Recipient's Stellar public key
+ * @returns {{ destinationAmount, path }} or null if no path found
+ */
+async function findPaymentPath(sourceAsset, sourceAmount, destinationAsset, destinationPublicKey) {
+  const srcAsset = resolveAsset(sourceAsset);
+  const dstAsset = resolveAsset(destinationAsset);
+
+  const result = await server
+    .strictSendPaths(srcAsset, String(sourceAmount), [dstAsset])
+    .call();
+
+  if (!result.records || result.records.length === 0) return null;
+
+  // Pick the record with the highest destination_amount
+  const best = result.records.reduce((a, b) =>
+    parseFloat(a.destination_amount) >= parseFloat(b.destination_amount) ? a : b
+  );
+
+  return {
+    destinationAmount: best.destination_amount,
+    path: best.path,
+  };
+}
+
+/**
+ * Execute a strict-send path payment.
+ * Sender spends exactly `amount` of `sourceAsset`; recipient receives
+ * at least `destinationMinAmount` of `destinationAsset`.
+ */
+async function sendPathPayment({
+  senderPublicKey,
+  encryptedSecretKey,
+  recipientPublicKey,
+  sourceAsset,
+  sourceAmount,
+  destinationAsset,
+  destinationMinAmount,
+  path = [],
+  memo,
+}) {
+  const srcAsset = resolveAsset(sourceAsset);
+  const dstAsset = resolveAsset(destinationAsset);
+
+  // Trustline check for non-native destination asset
+  if (destinationAsset !== 'XLM') {
+    await checkTrustline(recipientPublicKey, dstAsset);
+  }
+
+  const secretKey = decryptPrivateKey(encryptedSecretKey);
+  const senderKeypair = StellarSdk.Keypair.fromSecret(secretKey);
+  const senderAccount = await server.loadAccount(senderPublicKey);
+
+  // Convert path array (from Horizon) to StellarSdk Asset objects
+  const sdkPath = path.map((p) =>
+    p.asset_type === 'native'
+      ? StellarSdk.Asset.native()
+      : new StellarSdk.Asset(p.asset_code, p.asset_issuer)
+  );
+
+  const txBuilder = new StellarSdk.TransactionBuilder(senderAccount, {
+    fee: await server.fetchBaseFee(),
+    networkPassphrase,
+  })
+    .addOperation(
+      StellarSdk.Operation.pathPaymentStrictSend({
+        sendAsset: srcAsset,
+        sendAmount: String(sourceAmount),
+        destination: recipientPublicKey,
+        destAsset: dstAsset,
+        destMin: String(destinationMinAmount),
+        path: sdkPath,
+      })
+    )
+    .setTimeout(30);
+
+  if (memo) txBuilder.addMemo(StellarSdk.Memo.text(memo.slice(0, 28)));
+
+  const transaction = txBuilder.build();
+  transaction.sign(senderKeypair);
+
+  const result = await server.submitTransaction(transaction);
+  return { transactionHash: result.hash, ledger: result.ledger };
+}
+
+module.exports = {
+  createWallet,
+  getBalance,
+  sendPayment,
+  sendPathPayment,
+  findPaymentPath,
+  getTransactions,
+  decryptPrivateKey,
+};
