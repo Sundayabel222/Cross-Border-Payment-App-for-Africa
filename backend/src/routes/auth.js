@@ -9,6 +9,11 @@ const {
   getMe,
   setPIN,
   verifyPIN,
+  setup2FA,
+  verify2FA,
+  disable2FA,
+  refresh,
+  logout,
   forgotPassword,
   resetPassword,
 } = require('../controllers/authController');
@@ -74,6 +79,26 @@ router.post(
   [body('pin').matches(/^\d{4,6}$/).withMessage('PIN must be 4-6 digits')],
   validate,
   verifyPIN
+);
+
+router.post('/2fa/setup', authMiddleware, setup2FA);
+
+router.post('/2fa/verify',
+  authMiddleware,
+  [
+    body('totp_code').matches(/^\d{6}$/).withMessage('TOTP code must be 6 digits')
+  ],
+  validate,
+  verify2FA
+);
+
+router.post('/2fa/disable',
+  authMiddleware,
+  [
+    body('password').notEmpty().withMessage('Password is required')
+  ],
+  validate,
+  disable2FA
 );
 
 module.exports = router;

@@ -5,6 +5,7 @@ const db = require('../db');
 const { createWallet, encryptPrivateKey } = require('../services/stellar');
 const { hashPIN, comparePIN, validatePIN } = require('../services/pin');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/email');
+const { generateSecret, verifyToken, generateBackupCodes, useBackupCode } = require('../services/twofa');
 const {
   COOKIE_NAME,
   COOKIE_OPTIONS,
@@ -13,10 +14,11 @@ const {
   refreshTokenExpiresAt,
 } = require('../utils/tokens');
 
-const TOKEN_TTL_MS = 96 * 60 * 60 * 1000; // 96 hours
-const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+const TOKEN_TTL_MS = 96 * 60 * 60 * 1000;
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 const FORGOT_PASSWORD_MESSAGE = {
+  message: 'If an account exists for this email, you will receive password reset instructions shortly.'
   message:
     'If an account exists for this email, you will receive password reset instructions shortly.',
 };
@@ -68,6 +70,7 @@ async function register(req, res, next) {
     await db.query('COMMIT');
 
     await sendVerificationEmail(email, raw);
+    res.status(201).json({ message: 'Account created. Please verify your email before logging in.' });
 
     res.status(201).json({
       message: 'Account created. Please verify your email before logging in.',
@@ -80,10 +83,10 @@ async function register(req, res, next) {
 
 async function login(req, res, next) {
   try {
-    const { email, password } = req.body;
+    const { email, password, totp_code } = req.body;
 
     const result = await db.query(
-      `SELECT u.id, u.full_name, u.email, u.password_hash, u.email_verified, u.role, w.public_key
+      `SELECT u.id, u.full_name, u.email, u.password_hash, u.email_verified, u.role, u.totp_enabled, u.totp_secret, w.public_key
        FROM users u LEFT JOIN wallets w ON w.user_id = u.id
        WHERE u.email = $1`,
       [email]
@@ -98,10 +101,24 @@ async function login(req, res, next) {
       return res.status(403).json({ error: 'Please verify your email before logging in.' });
     }
 
+    // Check if 2FA is enabled
+    if (user.totp_enabled) {
+      if (!totp_code) {
+        return res.status(403).json({ error: 'TOTP code required', requires_2fa: true });
+      }
+
+      const isValid = verifyToken(user.totp_secret, totp_code);
+      if (!isValid) {
+        return res.status(401).json({ error: 'Invalid TOTP code' });
+      }
+    }
+
+    const token = signAccessToken({ userId: user.id, email: user.email, role: user.role });
     const token = signAccessToken({ userId: user.id, email: user.email, role: user.role });
 
     const { raw, hash } = generateRefreshToken();
     const expiresAt = refreshTokenExpiresAt();
+    
     await db.query(
       `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
        VALUES ($1, $2, $3, $4)`,
@@ -109,7 +126,6 @@ async function login(req, res, next) {
     );
 
     res.cookie(COOKIE_NAME, raw, COOKIE_OPTIONS);
-
     res.json({
       token,
       user: {
@@ -156,7 +172,7 @@ async function verifyEmail(req, res, next) {
 async function getMe(req, res, next) {
   try {
     const result = await db.query(
-      `SELECT u.id, u.full_name, u.email, u.phone, u.pin_setup_completed, w.public_key
+      `SELECT u.id, u.full_name, u.email, u.phone, u.pin_setup_completed, u.totp_enabled, w.public_key
        FROM users u LEFT JOIN wallets w ON w.user_id = u.id
        WHERE u.id = $1`,
       [req.user.userId]
@@ -170,7 +186,76 @@ async function getMe(req, res, next) {
       phone: u.phone,
       wallet_address: u.public_key,
       pin_setup_completed: u.pin_setup_completed,
+      totp_enabled: u.totp_enabled
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function setup2FA(req, res, next) {
+  try {
+    const userId = req.user.userId;
+    const user = await db.query('SELECT email FROM users WHERE id = $1', [userId]);
+    if (!user.rows[0]) return res.status(404).json({ error: 'User not found' });
+
+    const { secret, qrCode } = await generateSecret(user.rows[0].email);
+    const backupCodes = generateBackupCodes();
+
+    // Store temporarily (not enabled yet)
+    await db.query(
+      `UPDATE users SET totp_secret = $1, backup_codes = $2 WHERE id = $3`,
+      [secret, backupCodes, userId]
+    );
+
+    res.json({ qrCode, backupCodes, secret });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function verify2FA(req, res, next) {
+  try {
+    const { totp_code } = req.body;
+    const userId = req.user.userId;
+
+    const user = await db.query('SELECT totp_secret FROM users WHERE id = $1', [userId]);
+    if (!user.rows[0] || !user.rows[0].totp_secret) {
+      return res.status(400).json({ error: '2FA setup not initiated' });
+    }
+
+    const isValid = verifyToken(user.rows[0].totp_secret, totp_code);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid TOTP code' });
+    }
+
+    await db.query(
+      `UPDATE users SET totp_enabled = TRUE WHERE id = $1`,
+      [userId]
+    );
+
+    res.json({ message: '2FA enabled successfully' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function disable2FA(req, res, next) {
+  try {
+    const { password } = req.body;
+    const userId = req.user.userId;
+
+    const user = await db.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+    if (!user.rows[0] || !(await bcrypt.compare(password, user.rows[0].password_hash))) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    await db.query(
+      `UPDATE users SET totp_enabled = FALSE, totp_secret = NULL, backup_codes = NULL WHERE id = $1`,
+      [userId]
+    );
+
+    res.json({ message: '2FA disabled' });
   } catch (err) {
     next(err);
   }
@@ -186,6 +271,10 @@ async function setPIN(req, res, next) {
     }
 
     const pinHash = await hashPIN(pin);
+    await db.query(
+      `UPDATE users SET pin_hash = $1, pin_setup_completed = true WHERE id = $2`,
+      [pinHash, userId]
+    );
 
     await db.query(`UPDATE users SET pin_hash = $1, pin_setup_completed = true WHERE id = $2`, [
       pinHash,
@@ -203,6 +292,10 @@ async function verifyPIN(req, res, next) {
     const { pin } = req.body;
     const userId = req.user.userId;
 
+    const result = await db.query(
+      `SELECT pin_hash FROM users WHERE id = $1`,
+      [userId]
+    );
     const result = await db.query(`SELECT pin_hash FROM users WHERE id = $1`, [userId]);
 
     if (!result.rows[0]) {
@@ -360,6 +453,11 @@ module.exports = {
   getMe,
   setPIN,
   verifyPIN,
+  setup2FA,
+  verify2FA,
+  disable2FA,
+  refresh,
+  logout,
   forgotPassword,
   resetPassword,
 };

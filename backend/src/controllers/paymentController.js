@@ -5,6 +5,7 @@ const { sendPayment, fetchFee } = require("../services/stellar");
 const { sendPayment, sendPathPayment, findPaymentPath } = require("../services/stellar");
 const webhook = require("../services/webhook");
 const cache = require("../utils/cache");
+const { checkFraud, logFraudBlock } = require("../services/fraudDetection");
 const { parseHistoryFrom, parseHistoryTo, normalizeAsset } = require("../utils/historyQuery");
 
 // Configurable KYC transaction threshold in USD equivalent
@@ -134,11 +135,12 @@ async function send(req, res, next) {
     }
 
     // Fraud protection
-    const isSuspicious = await fraudCheck(public_key);
-    if (isSuspicious) {
+    const fraudCheck = await checkFraud(public_key, amount, asset);
+    if (fraudCheck.blocked) {
+      await logFraudBlock(public_key, fraudCheck.reason, amount, asset);
       return res
         .status(429)
-        .json({ error: "Transaction limit reached. Please wait before sending again." });
+        .json({ error: fraudCheck.reason });
     }
 
     // Daily send limit check
