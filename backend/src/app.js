@@ -15,6 +15,7 @@ const webhookRoutes = require('./routes/webhooks');
 const notificationRoutes = require('./routes/notifications');
 
 const logger = require('./utils/logger');
+const { runHealthChecks } = require('./services/health');
 
 const app = express();
 
@@ -59,9 +60,19 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-app.get('/health', (req, res) =>
-  res.json({ status: 'ok', network: process.env.STELLAR_NETWORK || 'testnet' })
-);
+app.get('/health', async (req, res) => {
+  try {
+    const body = await runHealthChecks();
+    res.status(body.status === 'ok' ? 200 : 503).json(body);
+  } catch {
+    res.status(503).json({
+      status: 'degraded',
+      db: 'down',
+      stellar: 'down',
+      network: process.env.STELLAR_NETWORK || 'testnet',
+    });
+  }
+});
 
 app.use((err, req, res, next) => {
   logger.error(err.message, { requestId: req.requestId, stack: err.stack, status: err.status });
