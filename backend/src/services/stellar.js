@@ -2,6 +2,8 @@ const StellarSdk = require('@stellar/stellar-sdk');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 
+const { withTimeout } = require('../utils/withTimeout');
+
 const isTestnet = process.env.STELLAR_NETWORK !== 'mainnet';
 const server = new StellarSdk.Horizon.Server(
   process.env.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org'
@@ -215,6 +217,16 @@ async function getTransactions(publicKey, limit = 20) {
 }
 
 /**
+ * Lightweight Horizon reachability check (SDK v12 has no serverInfo(); this is equivalent).
+ * Uses latest ledger page with a hard timeout.
+ */
+async function checkHorizonHealth() {
+  try {
+    await withTimeout(server.ledgers().order('desc').limit(1).call());
+    return true;
+  } catch {
+    return false;
+  }
  * Find the best path for a strict-send cross-asset payment.
  * Returns the top path result from Horizon's path-finding API.
  *
@@ -309,6 +321,9 @@ module.exports = {
   createWallet,
   getBalance,
   sendPayment,
+  getTransactions,
+  decryptPrivateKey,
+  checkHorizonHealth,
   sendPathPayment,
   findPaymentPath,
   getTransactions,
