@@ -21,7 +21,8 @@ export default function Profile() {
   const [copied, setCopied] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [showAddContact, setShowAddContact] = useState(false);
-  const [newContact, setNewContact] = useState({ name: '', wallet_address: '' });
+  const [newContact, setNewContact] = useState({ name: '', wallet_address: '', notes: '', memo_required: false, default_memo: '', tags: '' });
+  const [tagFilter, setTagFilter] = useState('');
   const [showBackup, setShowBackup] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
   const [exportedKey, setExportedKey] = useState(null);
@@ -106,9 +107,10 @@ export default function Profile() {
   const addContact = async (e) => {
     e.preventDefault();
     try {
-      const res = await api.post('/wallet/contacts', newContact);
+      const tags = newContact.tags.split(',').map(t => t.trim()).filter(Boolean);
+      const res = await api.post('/wallet/contacts', { ...newContact, tags });
       setContacts([...contacts, res.data.contact]);
-      setNewContact({ name: '', wallet_address: '' });
+      setNewContact({ name: '', wallet_address: '', notes: '', memo_required: false, default_memo: '', tags: '' });
       setShowAddContact(false);
       toast.success(t('profile.contact_added'));
     } catch {
@@ -263,17 +265,68 @@ export default function Profile() {
               onChange={e => setNewContact({ ...newContact, wallet_address: e.target.value })}
               className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
+            <textarea
+              placeholder="Notes (optional)"
+              value={newContact.notes}
+              onChange={e => setNewContact({ ...newContact, notes: e.target.value })}
+              rows={2}
+              maxLength={500}
+              className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500 resize-none"
+            />
+            <input
+              type="text"
+              placeholder="Default memo (optional)"
+              value={newContact.default_memo}
+              onChange={e => setNewContact({ ...newContact, default_memo: e.target.value })}
+              maxLength={64}
+              className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+            <input
+              type="text"
+              placeholder="Tags (comma-separated, e.g. business,exchange)"
+              value={newContact.tags}
+              onChange={e => setNewContact({ ...newContact, tags: e.target.value })}
+              className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newContact.memo_required}
+                onChange={e => setNewContact({ ...newContact, memo_required: e.target.checked })}
+                className="accent-primary-500"
+              />
+              Memo required for this contact
+            </label>
             <button type="submit" className="w-full bg-primary-500 text-white text-sm py-2 rounded-lg hover:bg-primary-600 transition-colors">
               {t('common.save')}
             </button>
           </form>
         )}
 
+        {/* Tag filter */}
+        {contacts.length > 0 && (
+          <div className="flex gap-2 flex-wrap mb-3">
+            {['', ...Array.from(new Set(contacts.flatMap(c => c.tags || [])))].map(tag => (
+              <button
+                key={tag || '__all__'}
+                onClick={() => setTagFilter(tag)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  tagFilter === tag
+                    ? 'border-primary-500 text-primary-400 bg-primary-500/10'
+                    : 'border-gray-700 text-gray-400 hover:border-gray-500'
+                }`}
+              >
+                {tag || 'All'}
+              </button>
+            ))}
+          </div>
+        )}
+
         {contacts.length === 0 ? (
           <p className="text-gray-500 text-sm text-center py-4">{t('profile.no_contacts')}</p>
         ) : (
           <div className="space-y-2" data-testid="contacts-list">
-            {contacts.map(c => (
+            {contacts.filter(c => !tagFilter || (c.tags || []).includes(tagFilter)).map(c => (
               <div key={c.id} className="flex items-center gap-3 group">
                 <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-sm font-semibold text-white">
                   {c.name?.[0]?.toUpperCase()}
@@ -281,6 +334,16 @@ export default function Profile() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white font-medium">{c.name}</p>
                   <p className="text-xs text-gray-500 font-mono truncate">{truncateAddress(c.wallet_address)}</p>
+                  {c.default_memo && (
+                    <p className="text-xs text-gray-500">Memo: <span className="font-mono">{c.default_memo}</span></p>
+                  )}
+                  {c.tags?.length > 0 && (
+                    <div className="flex gap-1 flex-wrap mt-0.5">
+                      {c.tags.map(tag => (
+                        <span key={tag} className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">{tag}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => deleteContact(c.id)}
