@@ -24,18 +24,18 @@ router.post('/export-key',
 router.get('/contacts', getContacts);
 router.post('/contacts',
   [
-    body('name')
-      .trim()
-      .notEmpty().withMessage('Name is required')
+    body('name').trim().notEmpty().withMessage('Name is required')
       .isLength({ min: 1, max: 100 }).withMessage('Name must be between 1 and 100 characters'),
-    body('wallet_address')
-      .notEmpty().withMessage('Wallet address is required')
+    body('wallet_address').notEmpty().withMessage('Wallet address is required')
       .custom((value) => {
-        if (!StellarSdk.StrKey.isValidEd25519PublicKey(value)) {
-          throw new Error('Invalid Stellar wallet address');
-        }
+        if (!StellarSdk.StrKey.isValidEd25519PublicKey(value)) throw new Error('Invalid Stellar wallet address');
         return true;
-      })
+      }),
+    body('notes').optional({ nullable: true }).isLength({ max: 500 }).withMessage('Notes max 500 characters'),
+    body('memo_required').optional().isBoolean().withMessage('memo_required must be boolean'),
+    body('default_memo').optional({ nullable: true }).isLength({ max: 64 }).withMessage('default_memo max 64 characters'),
+    body('tags').optional().isArray().withMessage('tags must be an array')
+      .custom(arr => arr.every(t => typeof t === 'string' && t.length <= 50)).withMessage('Each tag must be a string ≤ 50 chars'),
   ],
   validate,
   addContact

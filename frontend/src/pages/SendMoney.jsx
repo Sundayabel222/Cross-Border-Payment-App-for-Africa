@@ -90,7 +90,12 @@ export default function SendMoney() {
         e.preventDefault();
         if (selectedContactIndex >= 0 && selectedContactIndex < filteredContacts.length) {
           const contact = filteredContacts[selectedContactIndex];
-          setForm({ ...form, recipient_address: contact.wallet_address });
+          setForm({
+            ...form,
+            recipient_address: contact.wallet_address,
+            memo: contact.default_memo || form.memo,
+          });
+          if (contact.memo_required) setMemoRequired(true);
           setShowContacts(false);
           setContactSearch('');
         }
@@ -318,7 +323,12 @@ export default function SendMoney() {
                       key={c.id}
                       type="button"
                       onClick={() => {
-                        setForm({ ...form, recipient_address: c.wallet_address });
+                        setForm({
+                          ...form,
+                          recipient_address: c.wallet_address,
+                          memo: c.default_memo || form.memo,
+                        });
+                        if (c.memo_required) setMemoRequired(true);
                         setShowContacts(false);
                         setContactSearch('');
                       }}
