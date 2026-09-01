@@ -1,4 +1,6 @@
 const db = require('../db');
+const { detectReferralAbuse } = require('../services/referralAbuseGuard');
+const logger = require('../utils/logger');
 
 const REFERRAL_CREDIT_BPS = parseInt(process.env.REFERRAL_CREDIT_BPS || '50', 10); // 0.5% fee discount
 const REFERRAL_EXPIRY_DAYS = 90;
@@ -61,6 +63,15 @@ async function awardReferralCredit(referredUserId) {
   if (!result.rows[0]) return;
 
   const referrerId = result.rows[0].referrer_id;
+
+  // Reject self-referral and circular referral chains before crediting
+  const abuseReason = await detectReferralAbuse(referrerId, referredUserId);
+  if (abuseReason) {
+    logger.warn('Referral credit withheld — abuse check failed', {
+      referrerId, referredUserId, reason: abuseReason,
+    });
+    return;
+  }
 
   // Only award once per referred user
   const existing = await db.query(
