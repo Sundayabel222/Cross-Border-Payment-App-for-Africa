@@ -18,6 +18,10 @@ export function usePushNotifications() {
   const [permissionStatus, setPermissionStatus] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
+  // True when the backend has deactivated our subscription after repeated
+  // delivery failures (BE-022) — the browser still thinks it's subscribed,
+  // but the server will no longer send to it until we re-subscribe.
+  const [needsResubscribe, setNeedsResubscribe] = useState(false);
 
   useEffect(() => {
     setSupported('serviceWorker' in navigator && 'PushManager' in window);
@@ -33,12 +37,20 @@ export function usePushNotifications() {
       .catch(() => {});
   }, [supported]);
 
+  useEffect(() => {
+    api
+      .get('/notifications/subscription-health')
+      .then(({ data }) => setNeedsResubscribe(!!data?.needsResubscribe))
+      .catch(() => {});
+  }, []);
+
   const shouldShowPrompt = useCallback(() => {
-    if (permissionStatus !== 'default') return false;
+    if (permissionStatus === 'denied') return false;
+    if (permissionStatus === 'granted') return needsResubscribe;
     const deferred = localStorage.getItem('notifications_deferred');
     if (!deferred) return true;
     return Date.now() - parseInt(deferred, 10) > SEVEN_DAYS_MS;
-  }, [permissionStatus]);
+  }, [permissionStatus, needsResubscribe]);
 
   const subscribe = useCallback(async () => {
     if (!supported || !VAPID_PUBLIC_KEY) return;
@@ -52,6 +64,7 @@ export function usePushNotifications() {
       await api.post('/notifications/subscribe', { subscription: sub.toJSON() });
       setSubscribed(true);
       setPermissionStatus(Notification.permission);
+      setNeedsResubscribe(false);
     } catch (err) {
       console.error('Push subscribe failed', err);
     } finally {
@@ -75,5 +88,5 @@ export function usePushNotifications() {
     }
   }, [supported]);
 
-  return { supported, subscribed, loading, subscribe, unsubscribe, permissionStatus, shouldShowPrompt };
+  return { supported, subscribed, loading, subscribe, unsubscribe, permissionStatus, shouldShowPrompt, needsResubscribe };
 }
