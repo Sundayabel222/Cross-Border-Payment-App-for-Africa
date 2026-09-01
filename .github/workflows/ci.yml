@@ -111,6 +111,52 @@ jobs:
         name: coverage-report-${{ matrix.component }}
         path: coverage/
 
+  contracts:
+    name: Soroban Contracts (build + test)
+    runs-on: ubuntu-latest
+
+    # Share one Cargo target dir across all contract crates so the identical
+    # soroban-sdk dependency graph is compiled once for the whole job.
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: contracts/target
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        # Needed to compile Soroban contracts to WASM (matches contracts/deploy.sh)
+        targets: wasm32-unknown-unknown
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          contracts/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/**/Cargo.toml', '**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Build all contracts (WASM)
+      run: |
+        set -e
+        for manifest in contracts/*/Cargo.toml; do
+          echo "=== Building $(dirname "$manifest")/ ==="
+          cargo build --release --target wasm32-unknown-unknown --manifest-path "$manifest"
+        done
+
+    - name: Test all contracts
+      run: |
+        set -e
+        for manifest in contracts/*/Cargo.toml; do
+          echo "=== Testing $(dirname "$manifest")/ ==="
+          cargo test --manifest-path "$manifest"
+        done
+
   e2e:
     name: End-to-End Tests
     runs-on: ubuntu-latest
